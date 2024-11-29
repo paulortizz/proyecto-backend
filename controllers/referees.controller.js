@@ -1,5 +1,6 @@
 const footballApi = require('../utils/footballApi');
 
+// Controlador principal
 exports.getRefereeOverviewWithDetails = async (req, res) => {
     const leagueId = req.params.leagueId;
     const season = req.query.season;
@@ -9,87 +10,133 @@ exports.getRefereeOverviewWithDetails = async (req, res) => {
     }
 
     try {
-        // Obtener todos los partidos de la liga y temporada
-        const response = await footballApi.get(`/fixtures?league=${leagueId}&season=${season}`);
-        const fixtures = response.data.response;
+        // Obtener fixtures y datos de la liga
+        const fixtures = await fetchFixtures(leagueId, season);
+        const leagueInfo = await fetchLeagueInfo(leagueId);
 
-        if (!fixtures || fixtures.length === 0) {
+        if (!fixtures.length) {
             return res.status(404).json({ status: 'error', message: 'No matches found for this league and season' });
         }
 
-        // Obtener información de la liga para extraer país o entidad organizadora
-        const leagueResponse = await footballApi.get(`/leagues?id=${leagueId}`);
-        const leagueData = leagueResponse.data.response[0];
-        const leagueCountry = leagueData?.country?.name || 'Unknown';
-        const leagueOrganization = leagueData?.country?.code || 'Unknown';
-
-        // Extraer árbitros únicos con estadísticas
-        const refereeData = {};
-        fixtures.forEach((fixture) => {
-            const referee = fixture.fixture.referee;
-            if (referee) {
-                if (!refereeData[referee]) {
-                    refereeData[referee] = {
-                        name: referee,
-                        countryOrOrganization: leagueCountry || leagueOrganization,
-                        matchesArbitrated: 0,
-                        yellowCards: 0,
-                        redCards: 0,
-                        mostCommonStadiums: {},
-                        lastFiveMatches: [],
-                    };
-                }
-
-                // Incrementar contador de partidos arbitrados
-                refereeData[referee].matchesArbitrated += 1;
-
-                // Agregar estadios más comunes
-                const stadium = fixture.fixture.venue.name;
-                if (stadium) {
-                    refereeData[referee].mostCommonStadiums[stadium] =
-                        (refereeData[referee].mostCommonStadiums[stadium] || 0) + 1;
-                }
-
-                // Agregar partidos recientes
-                if (refereeData[referee].lastFiveMatches.length < 5) {
-                    refereeData[referee].lastFiveMatches.push({
-                        date: fixture.fixture.date,
-                        home: fixture.teams.home.name,
-                        away: fixture.teams.away.name,
-                        score: `${fixture.goals.home} - ${fixture.goals.away}`,
-                        stadium: stadium,
-                    });
-                }
-            }
-        });
-
-        // Convertir estadios más comunes a un array ordenado
-        Object.keys(refereeData).forEach((referee) => {
-            refereeData[referee].mostCommonStadiums = Object.entries(refereeData[referee].mostCommonStadiums)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 3) // Mostrar los 3 estadios más comunes
-                .map(([name, count]) => ({ name, count }));
-        });
+        // Procesar datos de los árbitros
+        const refereeData = processRefereeData(fixtures, leagueInfo, season);
 
         // Agrupar árbitros por país u organización
-        const groupedReferees = {};
-        const defaultGroup = 'Unknown'; // Para árbitros sin país u organización válida
-        Object.values(refereeData).forEach((referee) => {
-            const group = referee.countryOrOrganization || defaultGroup;
-            if (!groupedReferees[group]) {
-                groupedReferees[group] = [];
-            }
-            groupedReferees[group].push(referee);
-        });
+        const groupedReferees = groupRefereesByCountry(refereeData);
 
-        // Ordenar árbitros dentro de cada grupo por número de partidos arbitrados
-        Object.keys(groupedReferees).forEach((group) => {
-            groupedReferees[group].sort((a, b) => b.matchesArbitrated - a.matchesArbitrated);
+        res.status(200).json({
+            status: 'success',
+            data: groupedReferees,
+            seasons: leagueInfo.seasons, // Temporadas disponibles para la liga
         });
-
-        res.status(200).json({ status: 'success', data: groupedReferees });
     } catch (error) {
         console.error('Error fetching referee overview with details:', error);
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 };
+
+// Función para obtener los partidos (fixtures)
+async function fetchFixtures(leagueId, season) {
+    const response = await footballApi.get(`/fixtures?league=${leagueId}&season=${season}`);
+    return response.data.response || [];
+}
+
+// Función para obtener información de la liga
+async function fetchLeagueInfo(leagueId) {
+    const leagueResponse = await footballApi.get(`/leagues?id=${leagueId}`);
+    const leagueData = leagueResponse.data.response[0];
+    const seasonHistory = await footballApi.get(`/leagues/seasons?id=${leagueId}`);
+
+    return {
+        country: leagueData?.country?.name || 'Unknown',
+        organization: leagueData?.country?.code || 'Unknown',
+        seasons: seasonHistory.data.response || [],
+    };
+}
+
+// Función para procesar datos de los árbitros
+function processRefereeData(fixtures, leagueInfo, season) {
+    const refereeData = {};
+
+    fixtures.forEach((fixture) => {
+        const referee = fixture.fixture.referee;
+        if (!referee) return;
+
+        if (!refereeData[referee]) {
+            refereeData[referee] = initializeRefereeData(referee, leagueInfo);
+        }
+
+        updateRefereeData(refereeData[referee], fixture, season);
+    });
+
+    return refereeData;
+}
+
+// Inicializar datos del árbitro
+function initializeRefereeData(referee, leagueInfo) {
+    return {
+        name: referee,
+        countryOrOrganization: leagueInfo.country || leagueInfo.organization,
+        matchesArbitrated: 0,
+        yellowCards: 0,
+        redCards: 0,
+        penaltiesAwarded: 0,
+        foulsCommitted: 0,
+        offsidesCalled: 0,
+        mostCommonStadiums: {},
+        historicalStats: {},
+    };
+}
+
+// Actualizar datos del árbitro
+function updateRefereeData(referee, fixture, season) {
+    referee.matchesArbitrated += 1;
+    referee.yellowCards += fixture.statistics?.cards?.yellow || 0;
+    referee.redCards += fixture.statistics?.cards?.red || 0;
+    referee.penaltiesAwarded += fixture.statistics?.penalties?.awarded || 0;
+    referee.foulsCommitted += fixture.statistics?.fouls?.committed || 0;
+    referee.offsidesCalled += fixture.statistics?.offsides || 0;
+
+    if (!referee.historicalStats[season]) {
+        referee.historicalStats[season] = {
+            matches: 0,
+            yellowCards: 0,
+            redCards: 0,
+            penaltiesAwarded: 0,
+            foulsCommitted: 0,
+            offsidesCalled: 0,
+        };
+    }
+
+    referee.historicalStats[season].matches += 1;
+    referee.historicalStats[season].yellowCards += fixture.statistics?.cards?.yellow || 0;
+    referee.historicalStats[season].redCards += fixture.statistics?.cards?.red || 0;
+    referee.historicalStats[season].penaltiesAwarded += fixture.statistics?.penalties?.awarded || 0;
+    referee.historicalStats[season].foulsCommitted += fixture.statistics?.fouls?.committed || 0;
+    referee.historicalStats[season].offsidesCalled += fixture.statistics?.offsides || 0;
+
+    const stadium = fixture.fixture.venue.name;
+    if (stadium) {
+        referee.mostCommonStadiums[stadium] = (referee.mostCommonStadiums[stadium] || 0) + 1;
+    }
+}
+
+// Agrupar árbitros por país u organización
+function groupRefereesByCountry(refereeData) {
+    const groupedReferees = {};
+    const defaultGroup = 'Unknown';
+
+    Object.values(refereeData).forEach((referee) => {
+        const group = referee.countryOrOrganization || defaultGroup;
+        if (!groupedReferees[group]) {
+            groupedReferees[group] = [];
+        }
+        groupedReferees[group].push(referee);
+    });
+
+    Object.keys(groupedReferees).forEach((group) => {
+        groupedReferees[group].sort((a, b) => b.matchesArbitrated - a.matchesArbitrated);
+    });
+
+    return groupedReferees;
+}
