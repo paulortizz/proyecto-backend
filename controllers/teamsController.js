@@ -4,30 +4,41 @@ const footballApi = require('../utils/footballApi');
 exports.getTeams = async (req, res) => {
     const { leagueId, season, search } = req.query;
 
-    const leagueIdNumber = parseInt(leagueId, 10);
-    const seasonNumber = parseInt(season, 10);
+    const leagueIdNumber = leagueId ? parseInt(leagueId, 10) : null;
+    const seasonNumber = season ? parseInt(season, 10) : null;
 
-    if (isNaN(leagueIdNumber) || isNaN(seasonNumber)) {
-        return res.status(400).json({ status: 'error', message: 'League ID and season must be valid numbers' });
+    // Validar si falta leagueId o season en la solicitud
+    if ((!leagueIdNumber || !seasonNumber) && !search) {
+        return res.status(400).json({ 
+            status: 'error', 
+            message: 'League ID, season, or a search query is required' 
+        });
     }
 
     try {
-        const response = await footballApi.get(`/teams?league=${leagueIdNumber}&season=${seasonNumber}`);
+        let teams = [];
+        if (leagueIdNumber && seasonNumber) {
+            // Obtener equipos por liga y temporada
+            const response = await footballApi.get(`/teams?league=${leagueIdNumber}&season=${seasonNumber}`);
 
-        if (!response || !response.data || !Array.isArray(response.data.response)) {
-            return res.status(500).json({ status: 'error', message: 'Invalid response from external API' });
+            if (!response || !response.data || !Array.isArray(response.data.response)) {
+                return res.status(500).json({ 
+                    status: 'error', 
+                    message: 'Invalid response from external API' 
+                });
+            }
+
+            teams = response.data.response;
         }
 
-        let teams = response.data.response;
-
-        // Filtrar equipos por término de búsqueda
+        // Filtrar equipos por término de búsqueda (global o dentro de la liga/temporada especificada)
         if (search) {
-            teams = teams.filter(team =>
-                team.team.name.toLowerCase().includes(search.toLowerCase())
-            );
+            const searchResponse = await footballApi.get(`/teams?search=${search}`);
+            const searchedTeams = searchResponse.data.response || [];
+            teams = [...teams, ...searchedTeams];
         }
 
-        // Mapear datos
+        // Mapear los datos
         const mappedTeams = teams.map(item => ({
             id: item.team.id,
             name: item.team.name,
@@ -41,11 +52,14 @@ exports.getTeams = async (req, res) => {
             }
         }));
 
-        if (!mappedTeams || mappedTeams.length === 0) {
-            return res.status(404).json({ status: 'error', message: 'No teams found for this league and season' });
+        // Eliminar duplicados si se combinan resultados
+        const uniqueTeams = Array.from(new Map(mappedTeams.map(team => [team.id, team])).values());
+
+        if (!uniqueTeams || uniqueTeams.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'No teams found for this league, season, or search query' });
         }
 
-        res.status(200).json({ status: 'success', data: mappedTeams });
+        res.status(200).json({ status: 'success', data: uniqueTeams });
     } catch (error) {
         console.error('Error fetching teams:', {
             error: error.message,
@@ -87,7 +101,10 @@ exports.getTeamMatches = async (req, res) => {
     const seasonNumber = parseInt(season, 10);
 
     if (!teamId || isNaN(seasonNumber)) {
-        return res.status(400).json({ status: 'error', message: 'Team ID and season are required and must be valid' });
+        return res.status(400).json({ 
+            status: 'error', 
+            message: 'Team ID and season are required and must be valid' 
+        });
     }
 
     try {
