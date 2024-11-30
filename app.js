@@ -16,6 +16,7 @@ const leagueDetailsRoutes = require('./routes/leagueDetails'); // Rutas para los
 const matchDetailsRoutes = require('./routes/matchDetails');
 const lineupsRoutes = require('./routes/lineups.routes');
 const refereesRoutes = require('./routes/referees.routes');
+const teamDetailsRoutes = require('./routes/teamDetailsRoutes');
 
 // Configuración de la aplicación y servidor HTTP
 const app = express();
@@ -53,6 +54,9 @@ app.use('/api/league', leagueDetailsRoutes);
 app.use('/api', matchDetailsRoutes);
 app.use('/api/lineups', lineupsRoutes);
 app.use('/api/referees', refereesRoutes);
+app.use('/api/team-details', teamDetailsRoutes);
+
+
 // Ruta raíz de la API
 app.get('/', (req, res) => {
     res.send('API de Fútbol en funcionamiento');
