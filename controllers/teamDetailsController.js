@@ -44,3 +44,116 @@ exports.getTeamOverview = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 };
+
+// Obtener todos los partidos jugados por un equipo, organizados por liga
+exports.getAllMatchesByTeam = async (req, res) => {
+    const { teamId } = req.params;
+
+    if (!teamId) {
+        return res.status(400).json({ status: 'error', message: 'Team ID is required' });
+    }
+
+    try {
+        // Consultar la API para obtener todos los partidos del equipo en la temporada actual
+        const season = new Date().getFullYear(); // Suponiendo que la temporada actual coincide con el año actual
+        const response = await footballApi.get(`/fixtures?team=${teamId}&season=${season}`);
+        const matches = response.data.response;
+
+        if (!matches || matches.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'No matches found for this team' });
+        }
+
+        // Organizar partidos por liga
+        const matchesByCompetition = {};
+
+        matches.forEach((match) => {
+            const leagueId = match.league.id;
+            const leagueName = match.league.name;
+            const leagueLogo = match.league.logo;
+
+            if (!matchesByCompetition[leagueId]) {
+                matchesByCompetition[leagueId] = {
+                    leagueName: leagueName,
+                    leagueLogo: leagueLogo,
+                    matches: [],
+                };
+            }
+
+            matchesByCompetition[leagueId].matches.push({
+                fixtureId: match.fixture.id,
+                date: match.fixture.date,
+                venue: {
+                    name: match.fixture.venue.name,
+                    city: match.fixture.venue.city,
+                },
+                homeTeam: {
+                    id: match.teams.home.id,
+                    name: match.teams.home.name,
+                    logo: match.teams.home.logo,
+                },
+                awayTeam: {
+                    id: match.teams.away.id,
+                    name: match.teams.away.name,
+                    logo: match.teams.away.logo,
+                },
+                goals: match.goals,
+                status: match.fixture.status,
+            });
+        });
+
+        // Convertir el objeto en un array para mejor manejo
+        const result = Object.values(matchesByCompetition).sort((a, b) => a.leagueName.localeCompare(b.leagueName));
+
+        res.status(200).json({ status: 'success', data: result });
+    } catch (error) {
+        console.error('Error fetching matches:', error.message);
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+};
+
+// Obtener partidos de un equipo filtrados por liga
+exports.getMatchesByLeague = async (req, res) => {
+    const { teamId, leagueId } = req.params;
+
+    if (!teamId || !leagueId) {
+        return res.status(400).json({ status: 'error', message: 'Team ID and League ID are required' });
+    }
+
+    try {
+        // Obtener partidos del equipo en la liga específica y temporada actual
+        const season = new Date().getFullYear(); // Ajustar según la lógica de temporadas
+        const response = await footballApi.get(`/fixtures?team=${teamId}&league=${leagueId}&season=${season}`);
+        const matches = response.data.response;
+
+        if (!matches || matches.length === 0) {
+            return res.status(404).json({ status: 'error', message: 'No matches found for this team in the specified league' });
+        }
+
+        // Formatear los datos de los partidos
+        const formattedMatches = matches.map((match) => ({
+            fixtureId: match.fixture.id,
+            date: match.fixture.date,
+            venue: {
+                name: match.fixture.venue.name,
+                city: match.fixture.venue.city,
+            },
+            homeTeam: {
+                id: match.teams.home.id,
+                name: match.teams.home.name,
+                logo: match.teams.home.logo,
+            },
+            awayTeam: {
+                id: match.teams.away.id,
+                name: match.teams.away.name,
+                logo: match.teams.away.logo,
+            },
+            goals: match.goals,
+            status: match.fixture.status,
+        }));
+
+        res.status(200).json({ status: 'success', data: formattedMatches });
+    } catch (error) {
+        console.error('Error fetching matches by league:', error.message);
+        res.status(500).json({ status: 'error', message: 'Internal server error' });
+    }
+};
