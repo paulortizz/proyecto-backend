@@ -18,6 +18,7 @@ const lineupsRoutes = require('./routes/lineups.routes');
 const refereesRoutes = require('./routes/referees.routes');
 const teamDetailsRoutes = require('./routes/teamDetailsRoutes');
 const teamMatchesRoutes = require('./routes/teamMatchesRoutes');
+const tablaRoutes = require('./routes/tablaRoutes');
 
 // Configuración de la aplicación y servidor HTTP
 const app = express();
@@ -57,7 +58,7 @@ app.use('/api/lineups', lineupsRoutes);
 app.use('/api/referees', refereesRoutes);
 app.use('/api/team-details', teamDetailsRoutes);
 app.use('/api/team', teamMatchesRoutes);
-
+app.use('/api/tablas', tablaRoutes);
 
 // Ruta raíz de la API
 app.get('/', (req, res) => {
