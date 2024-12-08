@@ -17,17 +17,32 @@ exports.getTeamOverview = async (req, res) => {
             return res.status(404).json({ status: 'error', message: 'Team not found' });
         }
 
+        // Obtener la temporada actual
+        const currentYear = new Date().getFullYear();
+        const season = `${currentYear}`;
+
         // Obtener el próximo partido del equipo
-        const nextMatchResponse = await footballApi.get(`/fixtures?team=${teamId}&next=1`);
-        const nextMatch = nextMatchResponse.data.response[0] || null;
+        let leagueId = null;
+        let nextMatch = null;
+
+        try {
+            const nextMatchResponse = await footballApi.get(`/fixtures?team=${teamId}&next=1`);
+            nextMatch = nextMatchResponse.data.response[0] || null;
+            leagueId = nextMatch?.league?.id || null; // Intentar obtener el leagueId del próximo partido
+        } catch (error) {
+            console.warn('No next match found or error fetching next match:', error.message);
+        }
 
         // Obtener los últimos 3 partidos jugados por el equipo
-        const recentMatchesResponse = await footballApi.get(`/fixtures?team=${teamId}&last=3`);
-        const recentMatches = recentMatchesResponse.data.response || [];
+        let recentMatches = [];
+        try {
+            const recentMatchesResponse = await footballApi.get(`/fixtures?team=${teamId}&last=3`);
+            recentMatches = recentMatchesResponse.data.response || [];
+        } catch (error) {
+            console.warn('Error fetching recent matches:', error.message);
+        }
 
-        // Obtener leagueId del primer próximo partido, si está disponible
-        const leagueId = nextMatch?.league?.id || null;
-
+        // Respuesta final
         res.status(200).json({
             status: 'success',
             data: {
@@ -37,6 +52,7 @@ exports.getTeamOverview = async (req, res) => {
                     logo: team.logo,
                     country: team.country,
                     leagueId: leagueId, // Aseguramos leagueId desde nextMatch
+                    season: season, // Agregamos la temporada actual
                 },
                 nextMatch: nextMatch,
                 recentMatches: recentMatches,
@@ -47,6 +63,8 @@ exports.getTeamOverview = async (req, res) => {
         res.status(500).json({ status: 'error', message: 'Internal server error' });
     }
 };
+
+
 
 
 // Obtener todos los partidos jugados por un equipo, organizados por liga

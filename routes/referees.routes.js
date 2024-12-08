@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const refereesController = require('../controllers/referees.controller');
+const { getRefereeOverviewWithDetails } = require('../controllers/referees.controller'); // Verifica la ruta del archivo
 
-// Ruta para obtener la información detallada de los árbitros de una competición
-router.get('/overview/:leagueId', refereesController.getRefereeOverviewWithDetails);
+router.get('/overview/:leagueId', getRefereeOverviewWithDetails);
 
 module.exports = router;
